@@ -1,0 +1,555 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  MERCHANT
+  DELIVERY_PARTNER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  ASSIGNED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  FAILED
+}
+
+enum DeliveryStatus {
+  AVAILABLE
+  ASSIGNED
+  ACCEPTED
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+}
+
+enum PlanFrequency {
+  DAILY
+  SELECTED_DAYS
+  WEEKLY
+  MONTHLY
+  ONE_TIME
+}
+
+enum PlanStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+}
+
+enum PlanActionType {
+  SKIP
+  EXTRA_DELIVERY
+  PAUSE
+  RESUME
+  QUANTITY_CHANGE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  ONLINE
+  CASH_ON_DELIVERY
+  WALLET
+}
+
+enum StockStatus {
+  IN_STOCK
+  LOW_STOCK
+  OUT_OF_STOCK
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum AuditAction {
+  PRODUCT_PRICE_CHANGED
+  INVENTORY_CHANGED
+  ORDER_CANCELLED
+  PAYMENT_STATUS_CHANGED
+  MERCHANT_CREATED
+  DELIVERY_PARTNER_CREATED
+  USER_ROLE_CHANGED
+  ADMIN_ACTION
+}
+
+model IdSequence {
+  prefix     String   @id
+  lastNumber BigInt   @default(100000)
+  updatedAt  DateTime @updatedAt
+}
+
+model User {
+  userId          String            @id
+  email           String            @unique
+  passwordHash    String
+  name            String
+  phone           String?
+  role            UserRole          @default(CUSTOMER)
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  merchant        Merchant?
+  deliveryPartner DeliveryPartner?
+  customer        Customer?
+  addresses       Address[]
+  orders          Order[]
+  dairyPlans      DairyPlan[]
+  cart            Cart?
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  partnerReviews  PartnerReview[]
+  favorites       CustomerFavorite[]
+
+  @@index([role])
+  @@index([email])
+}
+
+model Customer {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  defaultAddressId String?
+  user             User      @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model Merchant {
+  merchantId      String            @id
+  userId          String            @unique
+  businessName    String
+  address         String
+  phone           String
+  email           String
+  latitude        Float?
+  longitude       Float?
+  commissionRate  Float             @default(0.05)
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  user            User              @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  deliveryPartners DeliveryPartner[]
+  products        Product[]
+  productImages   ProductImage[]
+  inventory       Inventory[]
+  orders          Order[]
+  dairyPlans      DairyPlan[]
+  coupons         Coupon[]
+  deliveries      Delivery[]
+  payments        Payment[]
+
+  @@index([isActive])
+}
+
+model DeliveryPartner {
+  deliveryPartnerId String      @id
+  userId            String      @unique
+  merchantId        String
+  vehicleType       String?
+  vehicleNumber     String?
+  currentLatitude   Float?
+  currentLongitude  Float?
+  lastLocationAt    DateTime?
+  isAvailable       Boolean     @default(true)
+  isActive          Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  user              User        @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  merchant          Merchant    @relation(fields: [merchantId], references: [merchantId], onDelete: Cascade)
+  deliveries        Delivery[]
+  reviews           PartnerReview[]
+
+  @@index([merchantId])
+  @@index([isAvailable])
+}
+
+model Category {
+  categoryId  String    @id
+  name        String    @unique
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+}
+
+model ProductImage {
+  imageId      String   @id
+  merchantId   String
+  originalUrl  String
+  processedUrl String
+  status       String   @default("READY")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  merchant     Merchant @relation(fields: [merchantId], references: [merchantId], onDelete: Cascade)
+  products     Product[]
+
+  @@index([merchantId])
+}
+
+model Product {
+  productId           String         @id
+  merchantId          String
+  categoryId          String
+  name                String
+  description         String
+  price               Float
+  currency            String         @default("INR")
+  unit                String         @default("PACKET")
+  quantityValue       Float          @default(1)
+  imageId             String?
+  imageUrl            String?
+  images              String[]       @default([])
+  subscriptionAllowed Boolean        @default(true)
+  availableSchedules  String[]       @default(["DAILY", "SELECTED_DAYS"])
+  isActive            Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  merchant            Merchant       @relation(fields: [merchantId], references: [merchantId], onDelete: Cascade)
+  category            Category       @relation(fields: [categoryId], references: [categoryId])
+  productImage        ProductImage?  @relation(fields: [imageId], references: [imageId], onDelete: SetNull)
+  inventory           Inventory?
+  cartItems           CartItem[]
+  orderItems          OrderItem[]
+  dairyPlanItems      DairyPlanItem[]
+  favorites           CustomerFavorite[]
+
+  @@index([merchantId])
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+model Inventory {
+  id                String      @id @default(cuid())
+  merchantId        String
+  productId         String      @unique
+  availableQuantity Int         @default(0)
+  reservedQuantity  Int         @default(0)
+  stockStatus       StockStatus @default(IN_STOCK)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  merchant          Merchant    @relation(fields: [merchantId], references: [merchantId], onDelete: Cascade)
+  product           Product     @relation(fields: [productId], references: [productId], onDelete: Cascade)
+
+  @@index([merchantId])
+}
+
+model Address {
+  addressId    String      @id @default(cuid())
+  userId       String
+  title        String      @default("Home")
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  postalCode   String
+  latitude     Float?
+  longitude    Float?
+  isDefault    Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  user         User        @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  orders       Order[]
+  dairyPlans   DairyPlan[]
+
+  @@index([userId])
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id               String        @id @default(cuid())
+  cartId           String
+  productId        String
+  quantity         Int           @default(1)
+  deliverySchedule PlanFrequency @default(ONE_TIME)
+  selectedDays     Int[]         @default([])
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  cart             Cart          @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product          Product       @relation(fields: [productId], references: [productId], onDelete: Cascade)
+
+  @@index([cartId])
+  @@index([productId])
+}
+
+model Order {
+  orderId               String      @id
+  merchantId            String
+  customerId            String
+  addressId             String
+  status                OrderStatus @default(PENDING)
+  subtotal              Float
+  discount              Float       @default(0)
+  deliveryFee           Float       @default(0)
+  tax                   Float       @default(0)
+  total                 Float
+  isRecurringInstance   Boolean     @default(false)
+  dairyPlanId           String?
+  deliveryDate          DateTime
+  deliverySlotStartTime String?     @default("06:00")
+  deliverySlotEndTime   String?     @default("08:00")
+  notes                 String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  merchant              Merchant    @relation(fields: [merchantId], references: [merchantId], onDelete: Cascade)
+  customer              User        @relation(fields: [customerId], references: [userId], onDelete: Cascade)
+  address               Address     @relation(fields: [addressId], references: [addressId])
+  dairyPlan             DairyPlan?  @relation(fields: [dairyPlanId], references: [planId], onDelete: SetNull)
+  items                 OrderItem[]
+  payment               Payment?
+  delivery              Delivery?
+
+  @@index([merchantId])
+  @@index([customerId])
+  @@index([status])
+  @@index([deliveryDate])
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  productId   String
+  productName String
+  unitPrice   Float
+  quantity    Int
+  totalPrice  Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  order       Order    @relation(fields: [orderId], references: [orderId], onDelete: Cascade)
+  product     Product  @relation(fields: [productId], references: [productId])
+
+  @@index([orderId])
+}
+
+model DairyPlan {
+  planId       String          @id
+  merchantId   String
+  customerId   String
+  addressId    String
+  status       PlanStatus      @default(ACTIVE)
+  startDate    DateTime
+  endDate      DateTime?
+  frequency    PlanFrequency   @default(DAILY)
+  selectedDays Int[]           @default([])
+  pausedAt     DateTime?
+  resumedAt    DateTime?
+  cancelledAt  DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  merchant     Merchant        @relation(fields: [merchantId], references: [merchantId], onDelete: Cascade)
+  customer     User            @relation(fields: [customerId], references: [userId], onDelete: Cascade)
+  address      Address         @relation(fields: [addressId], references: [addressId])
+  items        DairyPlanItem[]
+  actions      DairyPlanAction[]
+  orders       Order[]
+
+  @@index([merchantId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model DairyPlanItem {
+  id        String    @id @default(cuid())
+  planId    String
+  productId String
+  quantity  Int       @default(1)
+  unitPrice Float
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  dairyPlan DairyPlan @relation(fields: [planId], references: [planId], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [productId])
+
+  @@index([planId])
+}
+
+model DairyPlanAction {
+  id            String         @id @default(cuid())
+  planId        String
+  actionType    PlanActionType
+  targetDate    DateTime
+  extraQuantity Int?
+  reason        String?
+  createdAt     DateTime       @default(now())
+
+  dairyPlan     DairyPlan      @relation(fields: [planId], references: [planId], onDelete: Cascade)
+
+  @@index([planId])
+  @@index([targetDate])
+}
+
+model Payment {
+  paymentId            String        @id @default(cuid())
+  orderId              String        @unique
+  merchantId           String
+  amount               Float
+  currency             String        @default("INR")
+  status               PaymentStatus @default(PENDING)
+  method               PaymentMethod @default(ONLINE)
+  transactionReference String?       @unique
+  idempotencyKey       String?       @unique
+  metadata             Json?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  order                Order         @relation(fields: [orderId], references: [orderId], onDelete: Cascade)
+  merchant             Merchant      @relation(fields: [merchantId], references: [merchantId], onDelete: Cascade)
+
+  @@index([merchantId])
+  @@index([status])
+}
+
+model Delivery {
+  id                String          @id @default(cuid())
+  deliveryId        String?         @unique
+  orderId           String          @unique
+  merchantId        String
+  deliveryPartnerId String?
+  status            DeliveryStatus  @default(AVAILABLE)
+  assignedAt        DateTime?
+  acceptedAt        DateTime?
+  pickedUpAt        DateTime?
+  deliveredAt       DateTime?
+  failedReason      String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  order             Order           @relation(fields: [orderId], references: [orderId], onDelete: Cascade)
+  merchant          Merchant        @relation(fields: [merchantId], references: [merchantId], onDelete: Cascade)
+  deliveryPartner   DeliveryPartner? @relation(fields: [deliveryPartnerId], references: [deliveryPartnerId], onDelete: SetNull)
+
+  @@index([merchantId])
+  @@index([deliveryPartnerId])
+  @@index([status])
+}
+
+model Coupon {
+  couponId      String       @id @default(cuid())
+  merchantId    String?
+  code          String       @unique
+  description   String?
+  discountType  DiscountType @default(PERCENTAGE)
+  discountValue Float
+  minOrderValue Float?       @default(0)
+  maxDiscount   Float?
+  validFrom     DateTime     @default(now())
+  validUntil    DateTime
+  usageLimit    Int?
+  usedCount     Int          @default(0)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  merchant      Merchant?    @relation(fields: [merchantId], references: [merchantId], onDelete: Cascade)
+
+  @@index([merchantId])
+  @@index([code])
+  @@index([isActive])
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  actorId    String
+  actorRole  UserRole
+  merchantId String?
+  action     String
+  resource   String
+  resourceId String
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  createdAt  DateTime    @default(now())
+
+  actor      User        @relation(fields: [actorId], references: [userId], onDelete: Cascade)
+
+  @@index([actorId])
+  @@index([merchantId])
+  @@index([resource])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model PartnerReview {
+  reviewId          String          @id @default(cuid())
+  deliveryPartnerId String
+  orderId           String?         @unique
+  customerId        String
+  rating            Float           @default(5.0)
+  feedback          String?
+  tags              String[]        @default([])
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  deliveryPartner   DeliveryPartner @relation(fields: [deliveryPartnerId], references: [deliveryPartnerId], onDelete: Cascade)
+  customer          User            @relation(fields: [customerId], references: [userId], onDelete: Cascade)
+
+  @@index([deliveryPartnerId])
+  @@index([customerId])
+}
+
+model CustomerFavorite {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [productId], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+}
