@@ -43,5 +43,5 @@ USER expressjs
 
 EXPOSE 4001
 
-CMD ["node", "dist/src/main.js"]
+CMD ["node", "dist/main.js"]
 
