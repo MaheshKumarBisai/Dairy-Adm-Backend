@@ -50,6 +50,7 @@ jobs:
           INSTANCE_ID=$(echo "$RAW_INSTANCE_ID" | tr -d ' "[]'\''\r\n')
           echo "Targeting Instance: $INSTANCE_ID"
           COMMANDS=$(cat <<EOF
+          export PATH=\$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin
           aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
           docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker stop dairy-admin-backend 2>/dev/null || true
@@ -67,10 +68,12 @@ jobs:
           EOF
           )
 
+          RAW_COMMAND_JSON=$(jq -n --arg cmd "$COMMANDS" '[$cmd]')
+
           COMMAND_ID=$(aws ssm send-command \
-            --instance-ids $INSTANCE_ID \
+            --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters commands=["$(echo "$COMMANDS" | base64 -w 0 | sed 's/^/echo /' | sed 's/$/ | base64 -d | bash/')"] \
+            --parameters "commands=$RAW_COMMAND_JSON" \
             --comment "Deploying dairy-admin-backend commit $IMAGE_TAG" \
             --output text \
             --query "Command.CommandId")
