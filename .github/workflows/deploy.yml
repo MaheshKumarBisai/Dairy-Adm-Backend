@@ -46,15 +46,17 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           MAIN_BACKEND_URL: ${{ secrets.MAIN_BACKEND_INTERNAL_URL }}
         run: |
-          # Sanitize instance ID: strip quotes, brackets, and whitespace
-          INSTANCE_ID=$(echo "$RAW_INSTANCE_ID" | tr -d ' "[]'\''\r\n')
+          # Sanitize instance ID: extract strictly the i-xxxxxxxxxxxxxxxxx format
+          INSTANCE_ID=$(echo "$RAW_INSTANCE_ID" | grep -o 'i-[a-f0-9]\{8,17\}' | head -n 1)
           echo "Targeting Instance: $INSTANCE_ID"
-          COMMANDS=$(cat <<EOF
-          export PATH=\$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin
+
+          cat << 'EOF' > deploy_script.sh
+          #!/bin/bash
+          export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin
           aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
           docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker stop dairy-admin-backend 2>/dev/null || true
-          docker rm dairy-admin-backend 2>/dev/null || true
+          docker stop dairy-admin-backend || true
+          docker rm dairy-admin-backend || true
           docker run -d \
             --name dairy-admin-backend \
             --restart unless-stopped \
@@ -66,14 +68,17 @@ jobs:
             $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker image prune -af --filter "until=24h"
           EOF
-          )
 
-          RAW_COMMAND_JSON=$(jq -n --arg cmd "$COMMANDS" '[$cmd]')
+          # Substitute environment variables into the script cleanly
+          envsubst '$AWS_REGION $ECR_REGISTRY $ECR_REPOSITORY $IMAGE_TAG $ADMIN_PORT $DATABASE_URL $MAIN_BACKEND_URL' < deploy_script.sh > processed_script.sh
+
+          # Format SSM parameters as a JSON file
+          jq -R -s 'split("\n") | map(select(length > 0)) | {commands: .}' processed_script.sh > parameters.json
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters "commands=$RAW_COMMAND_JSON" \
+            --cli-input-json file://<(jq -n --arg id "$INSTANCE_ID" --slurpfile params parameters.json '{InstanceIds: [$id], DocumentName: "AWS-RunShellScript", Parameters: $params[0]}') \
             --comment "Deploying dairy-admin-backend commit $IMAGE_TAG" \
             --output text \
             --query "Command.CommandId")
