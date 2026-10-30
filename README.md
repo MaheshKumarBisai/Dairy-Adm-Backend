@@ -7,6 +7,29 @@ Dedicated Express backend service for the Admin Portal in the Dairy Marketplace 
 
 ---
 
+## 🏗️ System Architecture & AWS Infrastructure
+
+![System Architecture](docs/architecture.png)
+
+### Architecture Overview & Admin Backend Role
+
+The platform runs inside a secure **AWS VPC** across public and private subnets:
+
+1. **Ingress & Networking**:
+   - **Route 53 & Internet Gateway**: Resolves and routes public internet traffic to the VPC.
+   - **Application Load Balancer (ALB)** (Public Subnet): Routes administrative traffic (`/api/admin/*`) directly to this **Admin Backend** running on port `4001` in a dedicated Private Subnet, and web UI traffic to **Admin Frontend**.
+
+2. **Backend & Service Integration (Private Subnet)**:
+   - **Admin Backend (Express)**: Manages admin authentication, live order status changes, partner dispatch, and inventory analytics.
+   - **Amazon RDS (PostgreSQL)**: Direct connection via Prisma ORM for operational queries and live order transactions.
+   - **Main Backend (NestJS)**: Auto-scaled backend handling customer subscription pipelines and mobile APIs.
+
+3. **Storage & Media Processing**:
+   - **AWS Lambda ("Image Processing Function")**: Serverless handler invoked to process, crop, and optimize product and banner images uploaded through the admin portal.
+   - **Amazon S3**: High-durability object storage for all product photos, catalog assets, and media.
+
+---
+
 ## 📋 Prerequisites
 Before running on a new laptop, ensure:
 1. **Node.js**: `v20.x` or higher (`node -v`)
