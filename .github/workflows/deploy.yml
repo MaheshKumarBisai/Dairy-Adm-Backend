@@ -45,6 +45,7 @@ jobs:
           ADMIN_PORT: 4001
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           MAIN_BACKEND_URL: ${{ secrets.MAIN_BACKEND_INTERNAL_URL }}
+          AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
         run: |
           # Sanitize instance ID: strip whitespace, quotes, and newlines
           INSTANCE_ID=$(echo "$RAW_INSTANCE_ID" | tr -d ' "[]'\''\r\n\t')
@@ -70,11 +71,13 @@ jobs:
             -e ADMIN_PORT=$ADMIN_PORT \
             -e DATABASE_URL="$DATABASE_URL" \
             -e MAIN_BACKEND_URL="$MAIN_BACKEND_URL" \
+            -e AWS_S3_BUCKET_NAME="$AWS_S3_BUCKET_NAME" \
+            -e AWS_REGION="$AWS_REGION" \
             "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           docker image prune -af --filter "until=24h"
           EOF
 
-          envsubst '$AWS_REGION $ECR_REGISTRY $ECR_REPOSITORY $IMAGE_TAG $ADMIN_PORT $DATABASE_URL $MAIN_BACKEND_URL' < run_deploy.sh > script_substituted.sh
+          envsubst '$AWS_REGION $ECR_REGISTRY $ECR_REPOSITORY $IMAGE_TAG $ADMIN_PORT $DATABASE_URL $MAIN_BACKEND_URL $AWS_S3_BUCKET_NAME' < run_deploy.sh > script_substituted.sh
           B64_SCRIPT=$(base64 -w 0 < script_substituted.sh)
 
           COMMAND_ID=$(aws ssm send-command \

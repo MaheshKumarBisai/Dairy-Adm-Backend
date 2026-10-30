@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import sharp from 'sharp';
+import { adminS3Service } from './s3.service';
 
 export interface ProcessedImageResult {
   slot: 'front' | 'back' | 'detail';
@@ -68,7 +69,7 @@ export class ImageProcessorService {
         .toBuffer();
 
       // 3. Composite onto a pure white canvas (800x800) for clean catalog aesthetic
-      await sharp({
+      const finalBuffer = await sharp({
         create: {
           width: canvasSize,
           height: canvasSize,
@@ -83,9 +84,22 @@ export class ImageProcessorService {
           },
         ])
         .png({ quality: 92, compressionLevel: 8 })
-        .toFile(outputPath);
+        .toBuffer();
 
-      const processedUrl = `/uploads/${merchantId}/${outputFilename}`;
+      fs.writeFileSync(outputPath, finalBuffer);
+
+      let processedUrl = `/uploads/${merchantId}/${outputFilename}`;
+
+      // Upload to Amazon S3 if bucket name is set
+      if (adminS3Service.isConfigured) {
+        try {
+          const s3Key = `uploads/products/${merchantId}/${outputFilename}`;
+          processedUrl = await adminS3Service.uploadFile(s3Key, finalBuffer, 'image/png');
+          console.log(`[ImageProcessor] Synced to S3: ${processedUrl}`);
+        } catch (s3Err: any) {
+          console.warn(`[ImageProcessor] S3 upload error: ${s3Err.message}`);
+        }
+      }
 
       return {
         slot,
