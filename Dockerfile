@@ -34,6 +34,9 @@ ENV ADMIN_PORT=4001
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 expressjs
 
+# Pre-create uploads directory with proper ownership so non-root expressjs can write
+RUN mkdir -p /app/uploads && chown -R expressjs:nodejs /app/uploads
+
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
