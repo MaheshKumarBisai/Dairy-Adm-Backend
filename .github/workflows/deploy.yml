@@ -46,15 +46,20 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           MAIN_BACKEND_URL: ${{ secrets.MAIN_BACKEND_INTERNAL_URL }}
         run: |
-          # Sanitize instance ID: extract strictly the i-xxxxxxxxxxxxxxxxx format
-          INSTANCE_ID=$(echo "$RAW_INSTANCE_ID" | grep -o 'i-[a-f0-9]\{8,17\}' | head -n 1)
+          # Sanitize instance ID: strip whitespace, quotes, and newlines
+          INSTANCE_ID=$(echo "$RAW_INSTANCE_ID" | tr -d ' "[]'\''\r\n\t')
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "ERROR: Secret EC2_INSTANCE_ID_ADMIN_PORTAL is empty or not set in GitHub Secrets!"
+            exit 1
+          fi
           echo "Targeting Instance: $INSTANCE_ID"
 
-          cat << 'EOF' > deploy_script.sh
+          cat << 'EOF' > run_deploy.sh
           #!/bin/bash
+          set -e
           export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin
-          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
-          docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+          docker pull "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           docker stop dairy-admin-backend || true
           docker rm dairy-admin-backend || true
           docker run -d \
@@ -65,20 +70,17 @@ jobs:
             -e ADMIN_PORT=$ADMIN_PORT \
             -e DATABASE_URL="$DATABASE_URL" \
             -e MAIN_BACKEND_URL="$MAIN_BACKEND_URL" \
-            $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           docker image prune -af --filter "until=24h"
           EOF
 
-          # Substitute environment variables into the script cleanly
-          envsubst '$AWS_REGION $ECR_REGISTRY $ECR_REPOSITORY $IMAGE_TAG $ADMIN_PORT $DATABASE_URL $MAIN_BACKEND_URL' < deploy_script.sh > processed_script.sh
-
-          # Format SSM parameters as a JSON file
-          jq -R -s 'split("\n") | map(select(length > 0)) | {commands: .}' processed_script.sh > parameters.json
+          envsubst '$AWS_REGION $ECR_REGISTRY $ECR_REPOSITORY $IMAGE_TAG $ADMIN_PORT $DATABASE_URL $MAIN_BACKEND_URL' < run_deploy.sh > script_substituted.sh
+          B64_SCRIPT=$(base64 -w 0 < script_substituted.sh)
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --cli-input-json file://<(jq -n --arg id "$INSTANCE_ID" --slurpfile params parameters.json '{InstanceIds: [$id], DocumentName: "AWS-RunShellScript", Parameters: $params[0]}') \
+            --parameters "commands=[\"echo '$B64_SCRIPT' | base64 -d | bash\"]" \
             --comment "Deploying dairy-admin-backend commit $IMAGE_TAG" \
             --output text \
             --query "Command.CommandId")
