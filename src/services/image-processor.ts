@@ -52,6 +52,36 @@ export class ImageProcessorService {
     const targetProductSize = canvasSize - padding * 2;
 
     try {
+      // 0. Attempt AI Background Removal via Main Backend (@imgly/background-removal-node)
+      const mainBackendUrl = (process.env.MAIN_BACKEND_URL || 'http://dairy-lb-2052637137.us-east-2.elb.amazonaws.com').replace(/\/+$/, '');
+      try {
+        const formData = new FormData();
+        const blob = new Blob([fileBuffer as any], { type: 'image/png' });
+        formData.append('file', blob, originalFilename);
+        formData.append('merchantId', merchantId);
+
+        const aiRes = await fetch(`${mainBackendUrl}/api/v1/products/public-upload-image`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (aiRes.ok) {
+          const aiJson: any = await aiRes.json();
+          if (aiJson?.data?.imageUrl) {
+            console.log(`[ImageProcessor] ✅ AI Background Removal Succeeded: ${aiJson.data.imageUrl}`);
+            return {
+              slot,
+              originalFilename,
+              processedUrl: aiJson.data.imageUrl,
+              width: canvasSize,
+              height: canvasSize,
+            };
+          }
+        }
+      } catch (aiErr: any) {
+        console.warn(`[ImageProcessor] AI background removal call skipped: ${aiErr.message}`);
+      }
+
       // 1. Load image with sharp and inspect
       const image = sharp(fileBuffer);
       const metadata = await image.metadata();
