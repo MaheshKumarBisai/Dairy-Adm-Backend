@@ -44,8 +44,8 @@ jobs:
           # App secrets
           ADMIN_PORT: 4001
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          MAIN_BACKEND_URL: ${{ secrets.MAIN_BACKEND_INTERNAL_URL }}
-          AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
+          MAIN_BACKEND_URL: ${{ secrets.MAIN_BACKEND_INTERNAL_URL || secrets.MAIN_BACKEND_URL || 'http://dairy-lb-2052637137.us-east-2.elb.amazonaws.com' }}
+          AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME || 'prod-dairy-images-09876' }}
         run: |
           # Sanitize instance ID: strip whitespace, quotes, and newlines
           INSTANCE_ID=$(echo "$RAW_INSTANCE_ID" | tr -d ' "[]'\''\r\n\t')

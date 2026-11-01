@@ -8,7 +8,7 @@ export class AdminS3Service {
 
   constructor() {
     this.region = process.env.AWS_REGION || 'us-east-2';
-    this.bucketName = process.env.AWS_S3_BUCKET_NAME || '';
+    this.bucketName = process.env.AWS_S3_BUCKET_NAME || 'prod-dairy-images-09876';
 
     this.s3Client = new S3Client({
       region: this.region,

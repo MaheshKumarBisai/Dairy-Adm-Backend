@@ -63,6 +63,7 @@ export class ImageProcessorService {
         const aiRes = await fetch(`${mainBackendUrl}/api/v1/products/public-upload-image`, {
           method: 'POST',
           body: formData,
+          signal: AbortSignal.timeout(4000),
         });
 
         if (aiRes.ok) {
@@ -86,33 +87,13 @@ export class ImageProcessorService {
       const image = sharp(fileBuffer);
       const metadata = await image.metadata();
 
-      // 2. High-quality containment with pure solid white background #FFFFFF
-      // Flatten any existing transparency to pure white, then contain within square canvas
-      const processedBuffer = await sharp(fileBuffer)
+      // 2. High-quality studio image fill (800x800 edge-to-edge square, zero white side bars)
+      const finalBuffer = await sharp(fileBuffer)
         .rotate() // auto-orient based on EXIF
-        .flatten({ background: { r: 255, g: 255, b: 255 } })
-        .resize(targetProductSize, targetProductSize, {
-          fit: 'inside',
-          withoutEnlargement: false,
-          background: { r: 255, g: 255, b: 255, alpha: 1 },
+        .resize(canvasSize, canvasSize, {
+          fit: 'cover',
+          position: 'center',
         })
-        .toBuffer();
-
-      // 3. Composite onto a pure white canvas (800x800) for clean catalog aesthetic
-      const finalBuffer = await sharp({
-        create: {
-          width: canvasSize,
-          height: canvasSize,
-          channels: 4,
-          background: { r: 255, g: 255, b: 255, alpha: 1 },
-        },
-      })
-        .composite([
-          {
-            input: processedBuffer,
-            gravity: 'center',
-          },
-        ])
         .png({ quality: 92, compressionLevel: 8 })
         .toBuffer();
 
